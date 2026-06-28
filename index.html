@@ -57,7 +57,7 @@
           </div>
           <strong>拖放图片到这里</strong>
           <span>或点击浏览文件</span>
-          <small>JPG、PNG、WEBP、BMP</small>
+          <small>JPG、PNG、WEBP、BMP、ZIP</small>
         </div>
         <input id="file-input" type="file" accept="image/*" multiple hidden>
 
@@ -71,6 +71,11 @@
             选择文件夹
           </button>
           <input id="folder-input" type="file" accept="image/*" webkitdirectory multiple hidden>
+          <button class="text-button zip-button" id="select-zip" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6zM14 3v4h4M10 7h2m-2 3h2m-2 3h2m-2 3h2"/></svg>
+            导入 ZIP
+          </button>
+          <input id="zip-input" type="file" accept=".zip,application/zip,application/x-zip-compressed" multiple hidden>
         </div>
 
         <div class="privacy-note">

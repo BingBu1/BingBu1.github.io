@@ -7,6 +7,7 @@
 直接打开 `index.html` 即可使用。也可以把整个目录部署到任意静态网站服务（GitHub Pages、Cloudflare Pages、Netlify 或自己的服务器）。
 
 - 支持多选、拖放、选择文件夹和粘贴图片
+- 支持直接导入 ZIP，并将压缩包内图片批量加入处理队列
 - 支持批量混淆、批量解混淆、单张下载和 ZIP 打包下载
 - 每张处理结果都支持“处理前 / 处理后”大图对比预览
 - 算法兼容 `singularpoint.cn/hideImg1.html` 的 Gilbert 曲线像素重排方式

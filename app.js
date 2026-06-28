@@ -9,8 +9,10 @@
     dropZone: $("#drop-zone"),
     fileInput: $("#file-input"),
     folderInput: $("#folder-input"),
+    zipInput: $("#zip-input"),
     selectFiles: $("#select-files"),
     selectFolder: $("#select-folder"),
+    selectZip: $("#select-zip"),
     emptySelect: $("#empty-select"),
     clearAll: $("#clear-all"),
     emptyState: $("#empty-state"),
@@ -45,6 +47,7 @@
     mode: "encrypt",
     items: [],
     running: false,
+    importing: false,
     previewItemId: null,
     previewTrigger: null,
     toastTimer: 0
@@ -219,8 +222,360 @@
     return file.type.startsWith("image/") || /\.(jpe?g|png|webp|bmp|gif|avif)$/i.test(file.name);
   }
 
-  function addFiles(fileList) {
-    if (state.running) return;
+  function isZipFile(file) {
+    return /\.zip$/i.test(file.name) || /^(application\/zip|application\/x-zip-compressed)$/i.test(file.type);
+  }
+
+  function imageMimeType(name) {
+    const extension = name.split(".").pop()?.toLowerCase();
+    return {
+      jpg: "image/jpeg",
+      jpeg: "image/jpeg",
+      png: "image/png",
+      webp: "image/webp",
+      bmp: "image/bmp",
+      gif: "image/gif",
+      avif: "image/avif"
+    }[extension] || "application/octet-stream";
+  }
+
+  function uniqueArchiveName(path, occupied) {
+    const base = safeName(path.replace(/\\/g, "/").split("/").pop() || "image");
+    const dot = base.lastIndexOf(".");
+    const stem = dot > 0 ? base.slice(0, dot) : base;
+    const extension = dot > 0 ? base.slice(dot) : "";
+    let candidate = base;
+    let index = 2;
+    while (occupied.has(candidate.toLowerCase())) candidate = `${stem}_${index++}${extension}`;
+    occupied.add(candidate.toLowerCase());
+    return candidate;
+  }
+
+  function buildHuffmanTable(lengths) {
+    let maxBits = 0;
+    for (const length of lengths) maxBits = Math.max(maxBits, length);
+    if (!maxBits) return { table: new Uint32Array(1), maxBits: 0 };
+
+    const counts = new Uint16Array(maxBits + 1);
+    const nextCodes = new Uint16Array(maxBits + 1);
+    for (const length of lengths) if (length) counts[length]++;
+    let code = 0;
+    for (let bits = 1; bits <= maxBits; bits++) {
+      code = (code + counts[bits - 1]) << 1;
+      nextCodes[bits] = code;
+    }
+
+    const table = new Uint32Array(1 << maxBits);
+    for (let symbol = 0; symbol < lengths.length; symbol++) {
+      const length = lengths[symbol];
+      if (!length) continue;
+      let current = nextCodes[length]++;
+      let reversed = 0;
+      for (let bit = 0; bit < length; bit++) {
+        reversed = (reversed << 1) | (current & 1);
+        current >>>= 1;
+      }
+      const packed = (length << 16) | symbol;
+      for (let index = reversed; index < table.length; index += 1 << length) table[index] = packed;
+    }
+    return { table, maxBits };
+  }
+
+  function inflateRawFallback(input, expectedSize) {
+    const lengthBases = [3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258];
+    const lengthExtras = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0];
+    const distanceBases = [1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577];
+    const distanceExtras = [0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13];
+    const output = new Uint8Array(expectedSize);
+    let inputOffset = 0;
+    let outputOffset = 0;
+    let bitBuffer = 0;
+    let bitLength = 0;
+
+    function ensureBits(count) {
+      while (bitLength < count && inputOffset < input.length) {
+        bitBuffer |= input[inputOffset++] << bitLength;
+        bitLength += 8;
+      }
+    }
+
+    function readBits(count) {
+      ensureBits(count);
+      if (bitLength < count) throw new Error("DEFLATE 数据提前结束");
+      const value = bitBuffer & ((1 << count) - 1);
+      bitBuffer >>>= count;
+      bitLength -= count;
+      return value;
+    }
+
+    function decodeSymbol(tree) {
+      if (!tree.maxBits) throw new Error("DEFLATE 哈夫曼表无效");
+      ensureBits(tree.maxBits);
+      const packed = tree.table[bitBuffer & ((1 << tree.maxBits) - 1)];
+      const usedBits = packed >>> 16;
+      if (!usedBits || usedBits > bitLength) throw new Error("DEFLATE 编码无效");
+      bitBuffer >>>= usedBits;
+      bitLength -= usedBits;
+      return packed & 0xffff;
+    }
+
+    function fixedTrees() {
+      const literalLengths = new Uint8Array(288);
+      literalLengths.fill(8, 0, 144);
+      literalLengths.fill(9, 144, 256);
+      literalLengths.fill(7, 256, 280);
+      literalLengths.fill(8, 280, 288);
+      const distanceLengths = new Uint8Array(32);
+      distanceLengths.fill(5);
+      return { literals: buildHuffmanTable(literalLengths), distances: buildHuffmanTable(distanceLengths) };
+    }
+
+    function dynamicTrees() {
+      const literalCount = readBits(5) + 257;
+      const distanceCount = readBits(5) + 1;
+      const codeLengthCount = readBits(4) + 4;
+      const order = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];
+      const codeLengths = new Uint8Array(19);
+      for (let index = 0; index < codeLengthCount; index++) codeLengths[order[index]] = readBits(3);
+      const codeLengthTree = buildHuffmanTable(codeLengths);
+      const lengths = [];
+      const total = literalCount + distanceCount;
+      while (lengths.length < total) {
+        const symbol = decodeSymbol(codeLengthTree);
+        if (symbol <= 15) {
+          lengths.push(symbol);
+        } else if (symbol === 16) {
+          if (!lengths.length) throw new Error("DEFLATE 重复码无效");
+          const repeat = readBits(2) + 3;
+          const previous = lengths[lengths.length - 1];
+          for (let index = 0; index < repeat; index++) lengths.push(previous);
+        } else if (symbol === 17) {
+          const repeat = readBits(3) + 3;
+          for (let index = 0; index < repeat; index++) lengths.push(0);
+        } else if (symbol === 18) {
+          const repeat = readBits(7) + 11;
+          for (let index = 0; index < repeat; index++) lengths.push(0);
+        } else {
+          throw new Error("DEFLATE 码长无效");
+        }
+        if (lengths.length > total) throw new Error("DEFLATE 码长溢出");
+      }
+      return {
+        literals: buildHuffmanTable(lengths.slice(0, literalCount)),
+        distances: buildHuffmanTable(lengths.slice(literalCount))
+      };
+    }
+
+    let finalBlock = false;
+    while (!finalBlock) {
+      finalBlock = readBits(1) === 1;
+      const blockType = readBits(2);
+      if (blockType === 0) {
+        const paddingBits = bitLength & 7;
+        bitBuffer >>>= paddingBits;
+        bitLength -= paddingBits;
+        inputOffset -= bitLength >>> 3;
+        bitBuffer = 0;
+        bitLength = 0;
+        if (inputOffset + 4 > input.length) throw new Error("DEFLATE 存储块不完整");
+        const length = input[inputOffset] | (input[inputOffset + 1] << 8);
+        const inverted = input[inputOffset + 2] | (input[inputOffset + 3] << 8);
+        inputOffset += 4;
+        if ((length ^ 0xffff) !== inverted) throw new Error("DEFLATE 存储块校验失败");
+        if (inputOffset + length > input.length || outputOffset + length > output.length) throw new Error("DEFLATE 存储块越界");
+        output.set(input.subarray(inputOffset, inputOffset + length), outputOffset);
+        inputOffset += length;
+        outputOffset += length;
+        continue;
+      }
+      if (blockType === 3) throw new Error("DEFLATE 使用了保留块类型");
+      const trees = blockType === 1 ? fixedTrees() : dynamicTrees();
+      while (true) {
+        const symbol = decodeSymbol(trees.literals);
+        if (symbol < 256) {
+          if (outputOffset >= output.length) throw new Error("DEFLATE 输出超过预期大小");
+          output[outputOffset++] = symbol;
+          continue;
+        }
+        if (symbol === 256) break;
+        const lengthIndex = symbol - 257;
+        if (lengthIndex < 0 || lengthIndex >= lengthBases.length) throw new Error("DEFLATE 长度码无效");
+        const copyLength = lengthBases[lengthIndex] + readBits(lengthExtras[lengthIndex]);
+        const distanceSymbol = decodeSymbol(trees.distances);
+        if (distanceSymbol >= distanceBases.length) throw new Error("DEFLATE 距离码无效");
+        const distance = distanceBases[distanceSymbol] + readBits(distanceExtras[distanceSymbol]);
+        if (distance > outputOffset || outputOffset + copyLength > output.length) throw new Error("DEFLATE 回溯距离无效");
+        for (let index = 0; index < copyLength; index++) {
+          output[outputOffset] = output[outputOffset - distance];
+          outputOffset++;
+        }
+      }
+    }
+    if (outputOffset !== expectedSize) throw new Error("DEFLATE 解压大小不一致");
+    return output;
+  }
+
+  async function inflateZipData(compressed, expectedSize) {
+    if ("DecompressionStream" in window) {
+      try {
+        const stream = new Blob([compressed]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+        return new Uint8Array(await new Response(stream).arrayBuffer());
+      } catch {
+        // Some browsers expose DecompressionStream but omit the raw DEFLATE format used by ZIP.
+      }
+    }
+    return inflateRawFallback(compressed, expectedSize);
+  }
+
+  async function extractImagesFromZip(archive) {
+    const mobileLike = matchMedia("(max-width: 780px)").matches || (navigator.deviceMemory && navigator.deviceMemory <= 4);
+    const maxArchiveBytes = mobileLike ? 180 * 1024 * 1024 : 500 * 1024 * 1024;
+    const maxExpandedBytes = mobileLike ? 300 * 1024 * 1024 : 900 * 1024 * 1024;
+    if (archive.size > maxArchiveBytes) throw new Error(`压缩包过大，请控制在 ${mobileLike ? "180" : "500"} MB 内`);
+
+    const buffer = await archive.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    const view = new DataView(buffer);
+    const minEocd = Math.max(0, bytes.length - 65557);
+    let eocd = -1;
+    for (let offset = bytes.length - 22; offset >= minEocd; offset--) {
+      if (view.getUint32(offset, true) === 0x06054b50) {
+        eocd = offset;
+        break;
+      }
+    }
+    if (eocd < 0) throw new Error("不是有效的 ZIP 文件或文件已损坏");
+    if (view.getUint16(eocd + 4, true) !== 0 || view.getUint16(eocd + 6, true) !== 0) {
+      throw new Error("暂不支持分卷 ZIP");
+    }
+
+    const entryCount = view.getUint16(eocd + 10, true);
+    const centralSize = view.getUint32(eocd + 12, true);
+    const centralOffset = view.getUint32(eocd + 16, true);
+    if (entryCount === 0xffff || centralOffset === 0xffffffff || centralSize === 0xffffffff) {
+      throw new Error("暂不支持 ZIP64 压缩包");
+    }
+    if (entryCount > 3000) throw new Error("压缩包内文件过多，请拆分后导入");
+    if (centralOffset + centralSize > bytes.length) throw new Error("ZIP 文件目录已损坏");
+
+    const entries = [];
+    const decoder = new TextDecoder("utf-8");
+    let cursor = centralOffset;
+    let expandedTotal = 0;
+    for (let index = 0; index < entryCount; index++) {
+      if (cursor + 46 > bytes.length || view.getUint32(cursor, true) !== 0x02014b50) {
+        throw new Error("ZIP 文件目录不完整");
+      }
+      const flags = view.getUint16(cursor + 8, true);
+      const method = view.getUint16(cursor + 10, true);
+      const compressedSize = view.getUint32(cursor + 20, true);
+      const uncompressedSize = view.getUint32(cursor + 24, true);
+      const nameLength = view.getUint16(cursor + 28, true);
+      const extraLength = view.getUint16(cursor + 30, true);
+      const commentLength = view.getUint16(cursor + 32, true);
+      const localOffset = view.getUint32(cursor + 42, true);
+      const nextEntry = cursor + 46 + nameLength + extraLength + commentLength;
+      if (nextEntry > bytes.length) throw new Error("ZIP 文件目录不完整");
+      const name = decoder.decode(bytes.subarray(cursor + 46, cursor + 46 + nameLength)).replace(/\0/g, "");
+      const isImage = /\.(jpe?g|png|webp|bmp|gif|avif)$/i.test(name) && !name.endsWith("/");
+      if (isImage) {
+        expandedTotal += uncompressedSize;
+        if (expandedTotal > maxExpandedBytes) throw new Error("解压后的图片总体积过大，请拆分压缩包");
+        entries.push({ name, flags, method, compressedSize, uncompressedSize, localOffset });
+      }
+      cursor = nextEntry;
+    }
+
+    const occupied = new Set(state.items.map(item => item.file.name.toLowerCase()));
+    const files = [];
+    let skipped = 0;
+    for (const entry of entries) {
+      if (entry.flags & 1) {
+        skipped++;
+        continue;
+      }
+      if (entry.method !== 0 && entry.method !== 8) {
+        skipped++;
+        continue;
+      }
+      if (entry.localOffset + 30 > bytes.length || view.getUint32(entry.localOffset, true) !== 0x04034b50) {
+        throw new Error("ZIP 中的图片索引已损坏");
+      }
+      const localNameLength = view.getUint16(entry.localOffset + 26, true);
+      const localExtraLength = view.getUint16(entry.localOffset + 28, true);
+      const dataStart = entry.localOffset + 30 + localNameLength + localExtraLength;
+      const dataEnd = dataStart + entry.compressedSize;
+      if (dataEnd > bytes.length) throw new Error("ZIP 中的图片数据不完整");
+      const compressed = bytes.slice(dataStart, dataEnd);
+      const data = entry.method === 0 ? compressed : await inflateZipData(compressed, entry.uncompressedSize);
+      if (entry.uncompressedSize && data.byteLength !== entry.uncompressedSize) {
+        throw new Error(`图片 ${entry.name} 解压不完整`);
+      }
+      const name = uniqueArchiveName(entry.name, occupied);
+      files.push(new File([data], name, {
+        type: imageMimeType(name),
+        lastModified: archive.lastModified + files.length + 1
+      }));
+    }
+    return { files, skipped, found: entries.length };
+  }
+
+  function setImporting(importing) {
+    state.importing = importing;
+    [els.selectFiles, els.selectFolder, els.selectZip, els.emptySelect, ...els.modeButtons].forEach(control => {
+      control.disabled = importing;
+    });
+    $$(".remove-item", els.queueList).forEach(button => {
+      button.disabled = importing || state.running;
+    });
+    els.dropZone.setAttribute("aria-busy", String(importing));
+    els.dropZone.classList.toggle("importing", importing);
+    updateSummary();
+  }
+
+  async function handleIncomingFiles(fileList) {
+    if (state.running || state.importing) return;
+    const incoming = [...fileList];
+    const directImages = incoming.filter(isImageFile);
+    const archives = incoming.filter(isZipFile);
+    if (!archives.length) {
+      addFiles(directImages);
+      return;
+    }
+
+    setImporting(true);
+    toast(`正在读取 ${archives.length} 个 ZIP…`);
+    const extracted = [];
+    const errors = [];
+    let skipped = 0;
+    try {
+      for (const archive of archives) {
+        try {
+          const result = await extractImagesFromZip(archive);
+          extracted.push(...result.files);
+          skipped += result.skipped;
+        } catch (error) {
+          errors.push(`${archive.name}：${error?.message || "读取失败"}`);
+        }
+      }
+      const added = addFiles([...directImages, ...extracted], { quiet: true });
+      if (added) {
+        const detail = archives.length ? `，其中 ZIP 提取 ${extracted.length} 张` : "";
+        toast(`已添加 ${added} 张图片${detail}${skipped ? `，跳过 ${skipped} 张` : ""}`);
+      } else if (errors.length) {
+        toast(errors[0]);
+      } else if (archives.length) {
+        toast("ZIP 中没有找到支持的图片");
+      } else {
+        toast("没有找到可处理的图片");
+      }
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  function addFiles(fileList, { quiet = false } = {}) {
+    if (state.running) return 0;
     const incoming = [...fileList];
     const images = incoming.filter(isImageFile);
     const keys = new Set(state.items.map(item => `${item.file.name}:${item.file.size}:${item.file.lastModified}`));
@@ -245,10 +600,13 @@
       added++;
     }
 
-    if (incoming.length && !images.length) toast("没有找到可处理的图片");
-    else if (!added && images.length) toast("这些图片已经在队列里了");
-    else if (added) toast(`已添加 ${added} 张图片`);
+    if (!quiet) {
+      if (incoming.length && !images.length) toast("没有找到可处理的图片");
+      else if (!added && images.length) toast("这些图片已经在队列里了");
+      else if (added) toast(`已添加 ${added} 张图片`);
+    }
     renderQueue();
+    return added;
   }
 
   function cleanupItem(item) {
@@ -268,7 +626,7 @@
   }
 
   function setMode(mode) {
-    if (state.running || mode === state.mode) return;
+    if (state.running || state.importing || mode === state.mode) return;
     closePreview();
     state.mode = mode;
     resetResults();
@@ -281,7 +639,7 @@
   }
 
   function removeItem(id) {
-    if (state.running) return;
+    if (state.running || state.importing) return;
     const index = state.items.findIndex(item => item.id === id);
     if (index === -1) return;
     if (state.previewItemId === id) closePreview();
@@ -291,7 +649,7 @@
   }
 
   function clearAll() {
-    if (state.running) return;
+    if (state.running || state.importing) return;
     closePreview();
     state.items.forEach(cleanupItem);
     state.items = [];
@@ -366,7 +724,7 @@
       previewButton.hidden = item.status !== "done";
       previewButton.addEventListener("click", event => openPreview(item, event.currentTarget));
       const removeButton = $(".remove-item", fragment);
-      removeButton.disabled = state.running;
+      removeButton.disabled = state.running || state.importing;
       removeButton.addEventListener("click", () => removeItem(item.id));
       els.queueList.append(fragment);
     });
@@ -403,12 +761,17 @@
     els.fileCount.textContent = total;
     els.emptyState.hidden = total > 0;
     els.queueList.hidden = total === 0;
-    els.clearAll.disabled = !total || state.running;
+    els.clearAll.disabled = !total || state.running || state.importing;
     els.summaryCard.hidden = total === 0;
     els.summaryCard.style.setProperty("--progress", `${progress}%`);
     els.summaryCount.textContent = `${done + failed} / ${total}`;
 
-    if (!total) {
+    if (state.importing) {
+      els.summaryTitle.textContent = "正在读取 ZIP";
+      els.summaryDetail.textContent = "正在安全地提取图片…";
+      els.dockLabel.textContent = "正在导入 ZIP";
+      els.dockDetail.textContent = "图片将在本地解压，不会上传";
+    } else if (!total) {
       els.summaryTitle.textContent = "准备就绪";
       els.summaryDetail.textContent = "等待添加图片";
       els.dockLabel.textContent = "还没有添加图片";
@@ -430,10 +793,10 @@
       els.dockDetail.textContent = `准备批量${modeLabel}`;
     }
 
-    els.processLabel.textContent = state.running ? "正在处理…" : `开始批量${modeLabel}`;
-    els.processAll.disabled = !total || state.running;
-    els.downloadAll.hidden = done === 0 || state.running;
-    els.downloadAll.disabled = done === 0 || state.running;
+    els.processLabel.textContent = state.importing ? "正在读取 ZIP…" : state.running ? "正在处理…" : `开始批量${modeLabel}`;
+    els.processAll.disabled = !total || state.running || state.importing;
+    els.downloadAll.hidden = done === 0 || state.running || state.importing;
+    els.downloadAll.disabled = done === 0 || state.running || state.importing;
   }
 
   function processWithWorker(item) {
@@ -599,7 +962,7 @@
   }
 
   async function processAll() {
-    if (!state.items.length || state.running) return;
+    if (!state.items.length || state.running || state.importing) return;
     state.running = true;
     for (const item of state.items) {
       if (item.outputUrl) URL.revokeObjectURL(item.outputUrl);
@@ -762,16 +1125,18 @@
   els.modeButtons.forEach(button => button.addEventListener("click", () => setMode(button.dataset.mode)));
   els.selectFiles.addEventListener("click", () => els.fileInput.click());
   els.emptySelect.addEventListener("click", () => els.fileInput.click());
-  els.dropZone.addEventListener("click", () => els.fileInput.click());
+  els.dropZone.addEventListener("click", () => { if (!state.importing) els.fileInput.click(); });
   els.dropZone.addEventListener("keydown", event => {
-    if (event.key === "Enter" || event.key === " ") {
+    if (!state.importing && (event.key === "Enter" || event.key === " ")) {
       event.preventDefault();
       els.fileInput.click();
     }
   });
   els.selectFolder.addEventListener("click", () => els.folderInput.click());
-  els.fileInput.addEventListener("change", event => { addFiles(event.target.files); event.target.value = ""; });
-  els.folderInput.addEventListener("change", event => { addFiles(event.target.files); event.target.value = ""; });
+  els.selectZip.addEventListener("click", () => els.zipInput.click());
+  els.fileInput.addEventListener("change", event => { handleIncomingFiles(event.target.files); event.target.value = ""; });
+  els.folderInput.addEventListener("change", event => { handleIncomingFiles(event.target.files); event.target.value = ""; });
+  els.zipInput.addEventListener("change", event => { handleIncomingFiles(event.target.files); event.target.value = ""; });
   els.clearAll.addEventListener("click", clearAll);
   els.processAll.addEventListener("click", processAll);
   els.downloadAll.addEventListener("click", downloadAll);
@@ -784,18 +1149,18 @@
 
   ["dragenter", "dragover"].forEach(type => els.dropZone.addEventListener(type, event => {
     event.preventDefault();
-    if (!state.running) els.dropZone.classList.add("dragging");
+    if (!state.running && !state.importing) els.dropZone.classList.add("dragging");
   }));
   ["dragleave", "drop"].forEach(type => els.dropZone.addEventListener(type, event => {
     event.preventDefault();
     els.dropZone.classList.remove("dragging");
   }));
   els.dropZone.addEventListener("drop", event => {
-    if (!state.running) addFiles(event.dataTransfer.files);
+    if (!state.running && !state.importing) handleIncomingFiles(event.dataTransfer.files);
   });
   document.addEventListener("paste", event => {
-    const files = [...(event.clipboardData?.files || [])].filter(isImageFile);
-    if (files.length) addFiles(files);
+    const files = [...(event.clipboardData?.files || [])].filter(file => isImageFile(file) || isZipFile(file));
+    if (files.length) handleIncomingFiles(files);
   });
   document.addEventListener("keydown", event => {
     if (event.key === "Escape" && !els.previewModal.hidden) closePreview();

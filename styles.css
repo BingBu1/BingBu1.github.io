@@ -235,6 +235,7 @@ main {
 
 .mode-button:hover { transform: translateY(-1px); border-color: #9fa79f; }
 .mode-button.active { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.mode-button:disabled { opacity: .55; cursor: wait; transform: none; }
 
 .mode-button svg {
   flex: 0 0 auto;
@@ -271,6 +272,13 @@ main {
   transform: translateY(-2px);
 }
 
+.drop-zone.importing { pointer-events: none; border-color: var(--orange); background: #fff3ee; }
+.drop-zone.importing .drop-icon { animation: zip-pulse .8s ease-in-out infinite alternate; }
+
+@keyframes zip-pulse {
+  to { transform: rotate(3deg) scale(1.08); }
+}
+
 .drop-icon {
   width: 44px;
   height: 44px;
@@ -291,7 +299,7 @@ main {
 .add-actions {
   margin-top: 9px;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -311,6 +319,9 @@ main {
 
 .text-button:hover { background: white; }
 .text-button svg { width: 16px; height: 16px; }
+.text-button:disabled { opacity: .48; cursor: wait; }
+.zip-button { border-color: #efb6a5; background: #fff5f1; color: #a94027; }
+.zip-button:hover { background: var(--orange-soft); }
 
 .privacy-note {
   margin-top: 22px;
@@ -835,6 +846,9 @@ body.preview-open { overflow: hidden; }
   .mode-button svg { width: 32px; height: 32px; }
   .mode-button b { font-size: 12px; }
   .mode-button small { font-size: 9px; }
+  .add-actions { gap: 6px; }
+  .text-button { min-height: 44px; padding: 0 5px; gap: 4px; font-size: 9px; }
+  .text-button svg { width: 14px; height: 14px; }
   .queue-panel { min-height: 470px; padding: 26px 18px; }
   .queue-head { padding-bottom: 19px; }
   .queue-head h2 { font-size: 20px; }
