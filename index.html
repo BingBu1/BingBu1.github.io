@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f4f1e8">
+  <meta name="description" content="在浏览器本地批量混淆或解混淆图片，兼容 Gilbert 空间填充曲线算法。">
+  <title>像素渡口 · 批量图片混淆</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="#top" aria-label="像素渡口首页">
+      <span class="brand-mark" aria-hidden="true">
+        <i></i><i></i><i></i><i></i>
+      </span>
+      <span>像素渡口</span>
+    </a>
+    <div class="local-badge">
+      <span class="pulse-dot" aria-hidden="true"></span>
+      仅在本地处理
+    </div>
+  </header>
+
+  <main id="top">
+    <section class="hero" aria-labelledby="hero-title">
+      <p class="eyebrow">BATCH IMAGE SHUFFLER · 01</p>
+      <h1 id="hero-title">把一张，<br><em>变成一批。</em></h1>
+      <p class="hero-copy">一次拖入多张图片，批量混淆或还原。文件不会离开你的设备——快、安静，也不留痕迹。</p>
+      <div class="hero-stats" aria-label="产品特点">
+        <span><b>∞</b> 批量队列</span>
+        <span><b>100%</b> 浏览器本地</span>
+        <span><b>ZIP</b> 一键打包</span>
+      </div>
+    </section>
+
+    <section class="workspace" aria-label="图片批量处理工具">
+      <aside class="control-panel">
+        <div class="section-kicker"><span>01</span> 选择操作</div>
+
+        <div class="mode-switch" role="radiogroup" aria-label="处理模式">
+          <button class="mode-button active" type="button" role="radio" aria-checked="true" data-mode="encrypt">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10V7a5 5 0 0 1 9.5-2.1M5 10h14v10H5zM12 14v3"/></svg>
+            <span><b>批量混淆</b><small>打散像素位置</small></span>
+          </button>
+          <button class="mode-button" type="button" role="radio" aria-checked="false" data-mode="decrypt">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 10V7a5 5 0 0 0-9.5-2.1M5 10h14v10H5zM12 14v3"/></svg>
+            <span><b>批量解混淆</b><small>还原原始排列</small></span>
+          </button>
+        </div>
+
+        <div class="section-kicker"><span>02</span> 添加图片</div>
+
+        <div class="drop-zone" id="drop-zone" tabindex="0" role="button" aria-label="选择或拖入多张图片">
+          <div class="drop-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M12 16V4m0 0L7 9m5-5 5 5M5 14v5h14v-5"/></svg>
+          </div>
+          <strong>拖放图片到这里</strong>
+          <span>或点击浏览文件</span>
+          <small>JPG、PNG、WEBP、BMP</small>
+        </div>
+        <input id="file-input" type="file" accept="image/*" multiple hidden>
+
+        <div class="add-actions">
+          <button class="text-button" id="select-files" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h6l2 2h8v10H4z"/></svg>
+            选择图片
+          </button>
+          <button class="text-button" id="select-folder" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h6l2 2h8v10H4zM12 12v5m-2.5-2.5h5"/></svg>
+            选择文件夹
+          </button>
+          <input id="folder-input" type="file" accept="image/*" webkitdirectory multiple hidden>
+        </div>
+
+        <div class="privacy-note">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5c0 4.6-2.8 8.1-7 10-4.2-1.9-7-5.4-7-10V6zM9 12l2 2 4-5"/></svg>
+          <p><b>你的图片不会被上传</b><br>所有运算都在当前浏览器完成。</p>
+        </div>
+      </aside>
+
+      <div class="queue-panel">
+        <div class="queue-head">
+          <div>
+            <div class="section-kicker"><span>03</span> 处理队列</div>
+            <h2>待处理图片 <sup id="file-count">0</sup></h2>
+          </div>
+          <button class="clear-button" id="clear-all" type="button" disabled>清空全部</button>
+        </div>
+
+        <div class="empty-state" id="empty-state">
+          <div class="empty-visual" aria-hidden="true">
+            <span></span><span></span><span></span>
+          </div>
+          <h3>队列还是空的</h3>
+          <p>添加图片后，它们会整齐地出现在这里。</p>
+          <button class="secondary-button" id="empty-select" type="button">选择多张图片</button>
+        </div>
+
+        <div class="queue-list" id="queue-list" aria-live="polite"></div>
+
+        <div class="summary-card" id="summary-card" hidden>
+          <div class="summary-progress" aria-hidden="true"><span id="summary-progress"></span></div>
+          <div>
+            <strong id="summary-title">准备就绪</strong>
+            <small id="summary-detail">等待开始处理</small>
+          </div>
+          <div class="summary-count" id="summary-count">0 / 0</div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="action-dock" id="action-dock">
+    <div class="dock-copy">
+      <span id="dock-label">还没有添加图片</span>
+      <small id="dock-detail">支持一次选择多张</small>
+    </div>
+    <button class="download-button" id="download-all" type="button" disabled hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0l-4-4m4 4 4-4M5 19h14"/></svg>
+      下载 ZIP
+    </button>
+    <button class="primary-button" id="process-all" type="button" disabled>
+      <span id="process-label">开始批量混淆</span>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"/></svg>
+    </button>
+  </div>
+
+  <template id="queue-item-template">
+    <article class="queue-item">
+      <div class="thumb-wrap">
+        <img class="thumbnail" alt="">
+        <span class="item-index"></span>
+      </div>
+      <div class="item-info">
+        <strong class="item-name"></strong>
+        <small class="item-meta"></small>
+        <div class="item-progress" aria-hidden="true"><span></span></div>
+        <p class="item-error" hidden></p>
+      </div>
+      <div class="item-status">
+        <span class="status-pill">待处理</span>
+        <span class="status-progress">0%</span>
+      </div>
+      <div class="item-actions">
+        <button class="icon-button preview-item" type="button" aria-label="预览处理前后对比" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z"/><circle cx="12" cy="12" r="2.5"/></svg>
+        </button>
+        <button class="icon-button download-item" type="button" aria-label="下载处理后的图片" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0l-4-4m4 4 4-4M5 19h14"/></svg>
+        </button>
+        <button class="icon-button remove-item" type="button" aria-label="从队列移除">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+    </article>
+  </template>
+
+  <div class="preview-modal" id="preview-modal" role="dialog" aria-modal="true" aria-labelledby="preview-title" hidden>
+    <div class="preview-backdrop" data-close-preview></div>
+    <section class="preview-dialog">
+      <header class="preview-header">
+        <div>
+          <p class="preview-eyebrow">BEFORE / AFTER</p>
+          <h2 id="preview-title">处理前后对比</h2>
+        </div>
+        <button class="preview-close" id="preview-close" type="button" aria-label="关闭预览">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </header>
+
+      <div class="preview-grid">
+        <figure class="preview-pane">
+          <figcaption><span>处理前</span><small id="before-caption">原始图片</small></figcaption>
+          <div class="preview-stage"><img id="before-preview" alt="处理前图片预览"></div>
+        </figure>
+        <figure class="preview-pane preview-pane-result">
+          <figcaption><span id="after-label">混淆后</span><small>JPEG · 最高质量</small></figcaption>
+          <div class="preview-stage"><img id="after-preview" alt="处理后图片预览"></div>
+        </figure>
+      </div>
+
+      <footer class="preview-footer">
+        <div>
+          <strong id="preview-filename"></strong>
+          <small id="preview-meta"></small>
+        </div>
+        <button class="preview-download" id="preview-download" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0l-4-4m4 4 4-4M5 19h14"/></svg>
+          下载处理结果
+        </button>
+      </footer>
+    </section>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>
