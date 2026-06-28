@@ -25,7 +25,7 @@
   <main id="top">
     <section class="hero" aria-labelledby="hero-title">
       <p class="eyebrow">BATCH IMAGE SHUFFLER · 01</p>
-      <h1 id="hero-title">把一张，<br><em>变成一批。</em></h1>
+      <h1 id="hero-title">我命令你，<br><em>把涩涩发给冰桑！</em></h1>
       <p class="hero-copy">一次拖入多张图片，批量混淆或还原。文件不会离开你的设备——快、安静，也不留痕迹。</p>
       <div class="hero-stats" aria-label="产品特点">
         <span><b>∞</b> 批量队列</span>
@@ -90,7 +90,13 @@
             <div class="section-kicker"><span>03</span> 处理队列</div>
             <h2>待处理图片 <sup id="file-count">0</sup></h2>
           </div>
-          <button class="clear-button" id="clear-all" type="button" disabled>清空全部</button>
+          <div class="queue-head-actions">
+            <button class="merge-button" id="merge-all" type="button" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h10v6H7zM7 15h10v6H7zM12 9v6"/></svg>
+              合成长图
+            </button>
+            <button class="clear-button" id="clear-all" type="button" disabled>清空全部</button>
+          </div>
         </div>
 
         <div class="empty-state" id="empty-state">
@@ -148,7 +154,7 @@
         <span class="status-progress">0%</span>
       </div>
       <div class="item-actions">
-        <button class="icon-button preview-item" type="button" aria-label="预览处理前后对比" hidden>
+        <button class="icon-button preview-item" type="button" aria-label="查看原图大图" hidden>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z"/><circle cx="12" cy="12" r="2.5"/></svg>
         </button>
         <button class="icon-button download-item" type="button" aria-label="下载处理后的图片" hidden>
@@ -161,13 +167,69 @@
     </article>
   </template>
 
+  <div class="merge-modal" id="merge-modal" role="dialog" aria-modal="true" aria-labelledby="merge-title" hidden>
+    <div class="merge-backdrop" data-close-merge></div>
+    <section class="merge-dialog">
+      <header class="merge-header">
+        <div>
+          <p class="preview-eyebrow">MERGE INTO ONE</p>
+          <h2 id="merge-title">合成长图</h2>
+        </div>
+        <button class="preview-close" id="merge-close" type="button" aria-label="关闭长图合并">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </header>
+
+      <div class="merge-toolbar">
+        <div class="merge-direction" role="radiogroup" aria-label="长图合并方向">
+          <button class="merge-direction-button active" type="button" role="radio" aria-checked="true" data-merge-direction="vertical">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h10v6H7zM7 15h10v6H7zM12 9v6"/></svg>
+            从上到下
+          </button>
+          <button class="merge-direction-button" type="button" role="radio" aria-checked="false" data-merge-direction="horizontal">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h6v10H3zM15 7h6v10h-6zM9 12h6"/></svg>
+            从左到右
+          </button>
+        </div>
+        <p>自动按最小边对齐，只缩小、不放大，保持顺序与清晰度。</p>
+      </div>
+
+      <div class="merge-preview-shell vertical" id="merge-preview-shell">
+        <div class="merge-loading" id="merge-loading">
+          <span></span>
+          正在生成长图…
+        </div>
+        <img id="merge-preview" alt="合成长图预览" hidden>
+      </div>
+
+      <footer class="merge-footer">
+        <div>
+          <strong id="merge-summary">等待生成</strong>
+          <small id="merge-meta">原图按队列顺序无缝拼接</small>
+        </div>
+        <div class="merge-footer-actions">
+          <button class="merge-secondary" id="merge-download" type="button" disabled>下载长图</button>
+          <button class="merge-secondary" id="merge-add" type="button" disabled>加入队列</button>
+          <button class="merge-primary" id="merge-process" type="button" disabled>
+            <span id="merge-process-label">加入并混淆</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"/></svg>
+          </button>
+        </div>
+      </footer>
+    </section>
+  </div>
+
   <div class="preview-modal" id="preview-modal" role="dialog" aria-modal="true" aria-labelledby="preview-title" hidden>
     <div class="preview-backdrop" data-close-preview></div>
     <section class="preview-dialog">
       <header class="preview-header">
         <div>
-          <p class="preview-eyebrow">BEFORE / AFTER</p>
+          <p class="preview-eyebrow">LARGE IMAGE PREVIEW</p>
           <h2 id="preview-title">处理前后对比</h2>
+        </div>
+        <div class="preview-tabs" role="tablist" aria-label="切换预览图片">
+          <button class="preview-tab active" type="button" role="tab" aria-selected="true" data-preview-view="before">原图</button>
+          <button class="preview-tab" type="button" role="tab" aria-selected="false" data-preview-view="after" id="after-tab-label">混淆后</button>
         </div>
         <button class="preview-close" id="preview-close" type="button" aria-label="关闭预览">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
@@ -175,11 +237,11 @@
       </header>
 
       <div class="preview-grid">
-        <figure class="preview-pane">
+        <figure class="preview-pane active" role="tabpanel" data-preview-pane="before">
           <figcaption><span>处理前</span><small id="before-caption">原始图片</small></figcaption>
           <div class="preview-stage"><img id="before-preview" alt="处理前图片预览"></div>
         </figure>
-        <figure class="preview-pane preview-pane-result">
+        <figure class="preview-pane preview-pane-result" role="tabpanel" data-preview-pane="after">
           <figcaption><span id="after-label">混淆后</span><small>JPEG · 最高质量</small></figcaption>
           <div class="preview-stage"><img id="after-preview" alt="处理后图片预览"></div>
         </figure>

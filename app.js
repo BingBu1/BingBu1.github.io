@@ -15,6 +15,7 @@
     selectZip: $("#select-zip"),
     emptySelect: $("#empty-select"),
     clearAll: $("#clear-all"),
+    mergeAll: $("#merge-all"),
     emptyState: $("#empty-state"),
     queueList: $("#queue-list"),
     fileCount: $("#file-count"),
@@ -32,14 +33,30 @@
     previewModal: $("#preview-modal"),
     previewClose: $("#preview-close"),
     previewTitle: $("#preview-title"),
+    previewTabs: $$(".preview-tab"),
+    previewPanes: $$("[data-preview-pane]"),
     beforeCaption: $("#before-caption"),
     beforePreview: $("#before-preview"),
     afterLabel: $("#after-label"),
+    afterTabLabel: $("#after-tab-label"),
     afterPreview: $("#after-preview"),
     previewFilename: $("#preview-filename"),
     previewMeta: $("#preview-meta"),
     previewDownload: $("#preview-download"),
     previewBackdrop: $("[data-close-preview]"),
+    mergeModal: $("#merge-modal"),
+    mergeClose: $("#merge-close"),
+    mergeBackdrop: $("[data-close-merge]"),
+    mergeDirectionButtons: $$(".merge-direction-button"),
+    mergePreviewShell: $("#merge-preview-shell"),
+    mergePreview: $("#merge-preview"),
+    mergeLoading: $("#merge-loading"),
+    mergeSummary: $("#merge-summary"),
+    mergeMeta: $("#merge-meta"),
+    mergeDownload: $("#merge-download"),
+    mergeAdd: $("#merge-add"),
+    mergeProcess: $("#merge-process"),
+    mergeProcessLabel: $("#merge-process-label"),
     toast: $("#toast")
   };
 
@@ -48,8 +65,17 @@
     items: [],
     running: false,
     importing: false,
+    merging: false,
+    mergeDirection: "vertical",
+    mergeBlob: null,
+    mergeUrl: null,
+    mergeWidth: 0,
+    mergeHeight: 0,
+    mergeGeneration: 0,
+    mergeTrigger: null,
     previewItemId: null,
     previewTrigger: null,
+    previewView: "before",
     toastTimer: 0
   };
 
@@ -526,7 +552,7 @@
       control.disabled = importing;
     });
     $$(".remove-item", els.queueList).forEach(button => {
-      button.disabled = importing || state.running;
+      button.disabled = importing || state.running || state.merging;
     });
     els.dropZone.setAttribute("aria-busy", String(importing));
     els.dropZone.classList.toggle("importing", importing);
@@ -626,7 +652,7 @@
   }
 
   function setMode(mode) {
-    if (state.running || state.importing || mode === state.mode) return;
+    if (state.running || state.importing || state.merging || mode === state.mode) return;
     closePreview();
     state.mode = mode;
     resetResults();
@@ -635,11 +661,12 @@
       button.classList.toggle("active", active);
       button.setAttribute("aria-checked", String(active));
     });
+    els.mergeProcessLabel.textContent = mode === "encrypt" ? "加入并混淆" : "加入并解混淆";
     renderQueue();
   }
 
   function removeItem(id) {
-    if (state.running || state.importing) return;
+    if (state.running || state.importing || state.merging) return;
     const index = state.items.findIndex(item => item.id === id);
     if (index === -1) return;
     if (state.previewItemId === id) closePreview();
@@ -649,7 +676,7 @@
   }
 
   function clearAll() {
-    if (state.running || state.importing) return;
+    if (state.running || state.importing || state.merging) return;
     closePreview();
     state.items.forEach(cleanupItem);
     state.items = [];
@@ -661,20 +688,40 @@
     return item.width && item.height ? `${item.width} × ${item.height} · ${size}` : size;
   }
 
+  function setPreviewView(view) {
+    state.previewView = view;
+    els.previewTabs.forEach(button => {
+      const active = button.dataset.previewView === view;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-selected", String(active));
+    });
+    els.previewPanes.forEach(pane => pane.classList.toggle("active", pane.dataset.previewPane === view));
+    if (view === "before") {
+      els.previewTitle.textContent = "原图大图预览";
+    } else {
+      els.previewTitle.textContent = state.mode === "encrypt" ? "混淆结果大图预览" : "解混淆结果大图预览";
+    }
+  }
+
   function openPreview(item, trigger) {
     if (item.status !== "done" || !item.outputUrl) return;
     state.previewItemId = item.id;
     state.previewTrigger = trigger || null;
     const isEncrypt = state.mode === "encrypt";
-    els.previewTitle.textContent = isEncrypt ? "混淆结果预览" : "解混淆结果预览";
     els.beforeCaption.textContent = isEncrypt ? "原始图片" : "待还原图片";
     els.afterLabel.textContent = isEncrypt ? "混淆后" : "解混淆后";
+    els.afterTabLabel.textContent = isEncrypt ? "混淆后" : "解混淆后";
     els.beforePreview.src = item.previewUrl;
     els.beforePreview.alt = `${item.file.name} 处理前预览`;
     els.afterPreview.src = item.outputUrl;
     els.afterPreview.alt = `${item.file.name} ${isEncrypt ? "混淆后" : "解混淆后"}预览`;
     els.previewFilename.textContent = item.file.name;
     els.previewMeta.textContent = `${item.width} × ${item.height} · 处理前 ${formatBytes(item.file.size)} · 处理后 ${formatBytes(item.outputBlob?.size || 0)}`;
+    const aspect = item.width && item.height ? item.height / item.width : 1;
+    els.previewModal.classList.toggle("preview-long-vertical", aspect >= 2.2);
+    els.previewModal.classList.toggle("preview-long-horizontal", aspect <= 0.45);
+    if (aspect >= 2.2) els.beforeCaption.textContent = `${isEncrypt ? "原始" : "待还原"}长图 · 上下滑动`;
+    setPreviewView("before");
     els.previewModal.hidden = false;
     document.body.classList.add("preview-open");
     requestAnimationFrame(() => els.previewClose.focus());
@@ -683,6 +730,7 @@
   function closePreview() {
     if (els.previewModal.hidden) return;
     els.previewModal.hidden = true;
+    els.previewModal.classList.remove("preview-long-vertical", "preview-long-horizontal");
     document.body.classList.remove("preview-open");
     els.beforePreview.removeAttribute("src");
     els.afterPreview.removeAttribute("src");
@@ -690,6 +738,192 @@
     state.previewItemId = null;
     state.previewTrigger = null;
     if (trigger?.isConnected) trigger.focus();
+  }
+
+  function clearMergeResult() {
+    if (state.mergeUrl) URL.revokeObjectURL(state.mergeUrl);
+    state.mergeBlob = null;
+    state.mergeUrl = null;
+    state.mergeWidth = 0;
+    state.mergeHeight = 0;
+    els.mergePreview.removeAttribute("src");
+    els.mergePreview.hidden = true;
+    els.mergeDownload.disabled = true;
+    els.mergeAdd.disabled = true;
+    els.mergeProcess.disabled = true;
+  }
+
+  function setMerging(merging) {
+    state.merging = merging;
+    els.mergeLoading.hidden = !merging;
+    els.mergeDirectionButtons.forEach(button => { button.disabled = merging; });
+    els.mergeDownload.disabled = merging || !state.mergeBlob;
+    els.mergeAdd.disabled = merging || !state.mergeBlob;
+    els.mergeProcess.disabled = merging || !state.mergeBlob;
+    updateSummary();
+  }
+
+  async function generateLongImage(direction = state.mergeDirection) {
+    if (state.items.length < 2) return;
+    const generation = ++state.mergeGeneration;
+    clearMergeResult();
+    setMerging(true);
+    els.mergeSummary.textContent = "正在读取图片…";
+    els.mergeMeta.textContent = "保持队列顺序，自动统一尺寸";
+
+    try {
+      const images = [];
+      for (const item of state.items) {
+        images.push(await loadImage(item.file));
+        if (generation !== state.mergeGeneration) return;
+      }
+      if (images.some(image => !image.naturalWidth || !image.naturalHeight)) throw new Error("部分图片无法读取尺寸");
+
+      const mobileLike = matchMedia("(max-width: 780px)").matches || (navigator.deviceMemory && navigator.deviceMemory <= 4);
+      const maxPixels = mobileLike ? 16000000 : 32000000;
+      const maxDimension = mobileLike ? 16380 : 32760;
+      let width;
+      let height;
+      let pieces;
+      let scale = 1;
+
+      if (direction === "vertical") {
+        const baseWidth = Math.min(...images.map(image => image.naturalWidth));
+        const rawHeight = images.reduce((sum, image) => sum + image.naturalHeight * baseWidth / image.naturalWidth, 0);
+        scale = Math.min(1, maxDimension / rawHeight, Math.sqrt(maxPixels / (baseWidth * rawHeight)));
+        width = Math.max(1, Math.floor(baseWidth * scale));
+        pieces = images.map(image => ({
+          image,
+          width,
+          height: Math.max(1, Math.round(image.naturalHeight * width / image.naturalWidth))
+        }));
+        height = pieces.reduce((sum, piece) => sum + piece.height, 0);
+        if (width < 64) throw new Error("图片数量过多，合成长图后会过窄，请分批合并");
+      } else {
+        const baseHeight = Math.min(...images.map(image => image.naturalHeight));
+        const rawWidth = images.reduce((sum, image) => sum + image.naturalWidth * baseHeight / image.naturalHeight, 0);
+        scale = Math.min(1, maxDimension / rawWidth, Math.sqrt(maxPixels / (baseHeight * rawWidth)));
+        height = Math.max(1, Math.floor(baseHeight * scale));
+        pieces = images.map(image => ({
+          image,
+          width: Math.max(1, Math.round(image.naturalWidth * height / image.naturalHeight)),
+          height
+        }));
+        width = pieces.reduce((sum, piece) => sum + piece.width, 0);
+        if (height < 64) throw new Error("图片数量过多，合成长图后会过矮，请分批合并");
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext("2d", { alpha: false });
+      if (!context) throw new Error("浏览器无法创建长图画布");
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, width, height);
+      context.imageSmoothingEnabled = true;
+      context.imageSmoothingQuality = "high";
+      let x = 0;
+      let y = 0;
+      for (let index = 0; index < pieces.length; index++) {
+        const piece = pieces[index];
+        context.drawImage(piece.image, x, y, piece.width, piece.height);
+        if (direction === "vertical") y += piece.height;
+        else x += piece.width;
+        if (index % 4 === 3) await nextFrame();
+        if (generation !== state.mergeGeneration) return;
+      }
+
+      const blob = await canvasToPngBlob(canvas);
+      if (generation !== state.mergeGeneration) return;
+      state.mergeBlob = blob;
+      state.mergeUrl = URL.createObjectURL(blob);
+      state.mergeWidth = width;
+      state.mergeHeight = height;
+      els.mergePreviewShell.classList.toggle("vertical", direction === "vertical");
+      els.mergePreviewShell.classList.toggle("horizontal", direction === "horizontal");
+      els.mergePreview.src = state.mergeUrl;
+      els.mergePreview.hidden = false;
+      els.mergeSummary.textContent = `${state.items.length} 张图片 · ${width} × ${height}`;
+      els.mergeMeta.textContent = scale < .999
+        ? `为兼容设备画布，已等比缩小至 ${Math.round(scale * 100)}% · ${formatBytes(blob.size)}`
+        : `按最小${direction === "vertical" ? "宽度" : "高度"}对齐，无放大 · ${formatBytes(blob.size)}`;
+    } catch (error) {
+      if (generation === state.mergeGeneration) {
+        els.mergeSummary.textContent = "长图生成失败";
+        els.mergeMeta.textContent = error?.message || "请减少图片数量后重试";
+        toast(error?.message || "长图生成失败");
+      }
+    } finally {
+      if (generation === state.mergeGeneration) setMerging(false);
+    }
+  }
+
+  function setMergeDirection(direction) {
+    if (state.merging || direction === state.mergeDirection) return;
+    state.mergeDirection = direction;
+    els.mergeDirectionButtons.forEach(button => {
+      const active = button.dataset.mergeDirection === direction;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-checked", String(active));
+    });
+    generateLongImage(direction);
+  }
+
+  function openMerge(trigger) {
+    if (state.items.length < 2 || state.running || state.importing || state.merging) return;
+    closePreview();
+    state.mergeTrigger = trigger || null;
+    state.mergeDirection = "vertical";
+    els.mergeDirectionButtons.forEach(button => {
+      const active = button.dataset.mergeDirection === "vertical";
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-checked", String(active));
+    });
+    els.mergeProcessLabel.textContent = state.mode === "encrypt" ? "加入并混淆" : "加入并解混淆";
+    els.mergeModal.hidden = false;
+    document.body.classList.add("merge-open");
+    generateLongImage("vertical");
+    requestAnimationFrame(() => els.mergeClose.focus());
+  }
+
+  function closeMerge() {
+    if (els.mergeModal.hidden) return;
+    state.mergeGeneration++;
+    state.merging = false;
+    els.mergeModal.hidden = true;
+    document.body.classList.remove("merge-open");
+    clearMergeResult();
+    const trigger = state.mergeTrigger;
+    state.mergeTrigger = null;
+    updateSummary();
+    if (trigger?.isConnected) trigger.focus();
+  }
+
+  function downloadMergedImage() {
+    if (!state.mergeBlob) return;
+    const direction = state.mergeDirection === "vertical" ? "vertical" : "horizontal";
+    triggerDownload(state.mergeBlob, `merged_${direction}_${state.items.length}.png`);
+  }
+
+  async function addMergedImage(processNow = false) {
+    if (!state.mergeBlob || state.merging) return;
+    const blob = state.mergeBlob;
+    const direction = state.mergeDirection === "vertical" ? "vertical" : "horizontal";
+    const file = new File([blob], `merged_${direction}_${Date.now()}.png`, { type: "image/png", lastModified: Date.now() });
+    closeMerge();
+    addFiles([file], { quiet: true });
+    const item = state.items.find(candidate => candidate.file === file);
+    if (!item) return;
+    if (!processNow) {
+      toast("长图已加入队列");
+      return;
+    }
+    state.running = true;
+    renderQueue();
+    await processOne(item);
+    state.running = false;
+    renderQueue();
+    toast(item.status === "done" ? `长图已${state.mode === "encrypt" ? "混淆" : "解混淆"}` : item.error || "长图处理失败");
   }
 
   function renderQueue() {
@@ -705,7 +939,7 @@
       image.src = item.outputUrl || item.previewUrl;
       image.alt = `${item.file.name} 预览`;
       image.classList.toggle("is-previewable", item.status === "done");
-      if (item.status === "done") image.title = "查看处理前后对比";
+      if (item.status === "done") image.title = "查看原图大图";
       image.addEventListener("click", event => openPreview(item, event.currentTarget));
       $(".item-index", fragment).textContent = String(index + 1).padStart(2, "0");
       $(".item-name", fragment).textContent = item.file.name;
@@ -724,7 +958,7 @@
       previewButton.hidden = item.status !== "done";
       previewButton.addEventListener("click", event => openPreview(item, event.currentTarget));
       const removeButton = $(".remove-item", fragment);
-      removeButton.disabled = state.running || state.importing;
+      removeButton.disabled = state.running || state.importing || state.merging;
       removeButton.addEventListener("click", () => removeItem(item.id));
       els.queueList.append(fragment);
     });
@@ -745,7 +979,7 @@
     error.textContent = item.error;
     if (item.outputUrl) $(".thumbnail", article).src = item.outputUrl;
     $(".thumbnail", article).classList.toggle("is-previewable", item.status === "done");
-    $(".thumbnail", article).title = item.status === "done" ? "查看处理前后对比" : "";
+    $(".thumbnail", article).title = item.status === "done" ? "查看原图大图" : "";
     $(".preview-item", article).hidden = item.status !== "done";
     $(".download-item", article).hidden = item.status !== "done";
   }
@@ -761,12 +995,18 @@
     els.fileCount.textContent = total;
     els.emptyState.hidden = total > 0;
     els.queueList.hidden = total === 0;
-    els.clearAll.disabled = !total || state.running || state.importing;
+    els.clearAll.disabled = !total || state.running || state.importing || state.merging;
+    els.mergeAll.disabled = total < 2 || state.running || state.importing || state.merging;
     els.summaryCard.hidden = total === 0;
     els.summaryCard.style.setProperty("--progress", `${progress}%`);
     els.summaryCount.textContent = `${done + failed} / ${total}`;
 
-    if (state.importing) {
+    if (state.merging) {
+      els.summaryTitle.textContent = "正在合成长图";
+      els.summaryDetail.textContent = "按队列顺序统一尺寸并拼接…";
+      els.dockLabel.textContent = "正在生成长图";
+      els.dockDetail.textContent = "使用高清 PNG 输出";
+    } else if (state.importing) {
       els.summaryTitle.textContent = "正在读取 ZIP";
       els.summaryDetail.textContent = "正在安全地提取图片…";
       els.dockLabel.textContent = "正在导入 ZIP";
@@ -793,10 +1033,10 @@
       els.dockDetail.textContent = `准备批量${modeLabel}`;
     }
 
-    els.processLabel.textContent = state.importing ? "正在读取 ZIP…" : state.running ? "正在处理…" : `开始批量${modeLabel}`;
-    els.processAll.disabled = !total || state.running || state.importing;
-    els.downloadAll.hidden = done === 0 || state.running || state.importing;
-    els.downloadAll.disabled = done === 0 || state.running || state.importing;
+    els.processLabel.textContent = state.merging ? "正在合成长图…" : state.importing ? "正在读取 ZIP…" : state.running ? "正在处理…" : `开始批量${modeLabel}`;
+    els.processAll.disabled = !total || state.running || state.importing || state.merging;
+    els.downloadAll.hidden = done === 0 || state.running || state.importing || state.merging;
+    els.downloadAll.disabled = done === 0 || state.running || state.importing || state.merging;
   }
 
   function processWithWorker(item) {
@@ -885,6 +1125,12 @@
     });
   }
 
+  function canvasToPngBlob(canvas) {
+    return new Promise((resolve, reject) => {
+      canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error("无法导出长图")), "image/png");
+    });
+  }
+
   const nextFrame = () => new Promise(resolve => requestAnimationFrame(resolve));
 
   async function processOnMainThread(item) {
@@ -962,7 +1208,7 @@
   }
 
   async function processAll() {
-    if (!state.items.length || state.running || state.importing) return;
+    if (!state.items.length || state.running || state.importing || state.merging) return;
     state.running = true;
     for (const item of state.items) {
       if (item.outputUrl) URL.revokeObjectURL(item.outputUrl);
@@ -1138,10 +1384,18 @@
   els.folderInput.addEventListener("change", event => { handleIncomingFiles(event.target.files); event.target.value = ""; });
   els.zipInput.addEventListener("change", event => { handleIncomingFiles(event.target.files); event.target.value = ""; });
   els.clearAll.addEventListener("click", clearAll);
+  els.mergeAll.addEventListener("click", event => openMerge(event.currentTarget));
   els.processAll.addEventListener("click", processAll);
   els.downloadAll.addEventListener("click", downloadAll);
   els.previewClose.addEventListener("click", closePreview);
   els.previewBackdrop.addEventListener("click", closePreview);
+  els.previewTabs.forEach(button => button.addEventListener("click", () => setPreviewView(button.dataset.previewView)));
+  els.mergeClose.addEventListener("click", closeMerge);
+  els.mergeBackdrop.addEventListener("click", closeMerge);
+  els.mergeDirectionButtons.forEach(button => button.addEventListener("click", () => setMergeDirection(button.dataset.mergeDirection)));
+  els.mergeDownload.addEventListener("click", downloadMergedImage);
+  els.mergeAdd.addEventListener("click", () => addMergedImage(false));
+  els.mergeProcess.addEventListener("click", () => addMergedImage(true));
   els.previewDownload.addEventListener("click", () => {
     const item = state.items.find(candidate => candidate.id === state.previewItemId);
     if (item) downloadItem(item);
@@ -1164,8 +1418,15 @@
   });
   document.addEventListener("keydown", event => {
     if (event.key === "Escape" && !els.previewModal.hidden) closePreview();
+    if (event.key === "Escape" && !els.mergeModal.hidden) closeMerge();
+    if (!els.previewModal.hidden && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
+      setPreviewView(event.key === "ArrowLeft" ? "before" : "after");
+    }
   });
-  window.addEventListener("beforeunload", () => state.items.forEach(cleanupItem));
+  window.addEventListener("beforeunload", () => {
+    state.items.forEach(cleanupItem);
+    if (state.mergeUrl) URL.revokeObjectURL(state.mergeUrl);
+  });
 
   renderQueue();
 })();
