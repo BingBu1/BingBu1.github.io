@@ -1,0 +1,17 @@
+:root {
+  color-scheme: light;
+  --ink: #172019;
+  --muted: #6c746e;
+  --paper: #f4f1e8;
+  --panel: #fffdf7;
+  --line: #d8d8cd;
+  --lime: #c9f36a;
+  --lime-dark: #799d2d;
+  --orange: #ff7146;
+  --orange-soft: #ffddd2;
+  --blue: #a9d8ff;
+  --shadow: 0 24px 70px rgba(31, 42, 34, .09);
+  --radius-lg: 28px;
+  --radius-md: 18px;
+  --radius-sm: 12px;
+}

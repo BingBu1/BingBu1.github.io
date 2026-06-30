@@ -1,0 +1,63 @@
+.action-dock {
+  position: fixed;
+  z-index: 20;
+  left: 50%;
+  bottom: max(22px, env(safe-area-inset-bottom));
+  width: min(700px, calc(100% - 36px));
+  min-height: 76px;
+  padding: 10px 11px 10px 20px;
+  border: 1px solid rgba(255,255,255,.13);
+  border-radius: 21px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(23, 32, 25, .95);
+  color: white;
+  box-shadow: 0 18px 54px rgba(23, 32, 25, .28);
+  backdrop-filter: blur(18px);
+  transform: translateX(-50%);
+}
+
+.dock-copy { min-width: 0; margin-right: auto; display: grid; gap: 2px; }
+.dock-copy span { overflow: hidden; font-size: 11px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.dock-copy small { color: #aab0aa; font-size: 9px; }
+
+.primary-button, .download-button {
+  min-height: 52px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: var(--lime);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform .18s ease, opacity .18s ease;
+}
+.primary-button:hover:not(:disabled), .download-button:hover { transform: translateY(-2px); }
+.primary-button:disabled { opacity: .38; cursor: default; }
+.primary-button svg, .download-button svg { width: 18px; height: 18px; }
+.download-button { background: var(--orange); color: white; }
+.download-button[hidden] { display: none; }
+
+.toast {
+  position: fixed;
+  z-index: 30;
+  left: 50%;
+  top: 22px;
+  max-width: calc(100% - 32px);
+  padding: 11px 16px;
+  border-radius: 10px;
+  background: var(--ink);
+  color: white;
+  font-size: 11px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -16px);
+  transition: opacity .22s ease, transform .22s ease;
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }

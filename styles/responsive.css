@@ -1,0 +1,120 @@
+@media (max-width: 1020px) {
+  .hero-copy, .hero-stats { right: 0; width: 270px; }
+  .workspace { grid-template-columns: 315px minmax(0, 1fr); }
+  .control-panel { padding: 29px; }
+  .queue-panel { padding: 31px 28px; }
+  .queue-item { grid-template-columns: 56px minmax(0, 1fr) 65px 104px; gap: 12px; }
+  .thumb-wrap { width: 56px; height: 56px; }
+  .item-actions { flex-direction: row; }
+  .icon-button { width: 32px; height: 32px; padding: 8px; }
+}
+
+@media (max-width: 780px) {
+  body { background: var(--paper); }
+  .site-header, main { width: min(100% - 28px, 680px); }
+  .site-header { height: 72px; }
+  .hero { min-height: 0; padding: 50px 0 45px; }
+  .hero h1 { font-size: clamp(58px, 15vw, 88px); }
+  .hero-copy { position: static; width: min(100%, 480px); margin-top: 30px; }
+  .hero-stats { position: static; width: 100%; margin-top: 18px; }
+  .workspace { grid-template-columns: 1fr; border-radius: 22px; }
+  .control-panel { border-right: 0; border-bottom: 1px solid var(--line); }
+  .mode-switch { grid-template-columns: 1fr 1fr; }
+  .drop-zone { min-height: 175px; }
+  .queue-panel { min-height: 520px; }
+  .preview-dialog { border-radius: 22px; }
+  .preview-stage { min-height: 360px; height: min(64vh, 620px); }
+  .merge-dialog { border-radius: 22px; }
+  .merge-toolbar { align-items: flex-start; flex-direction: column; gap: 8px; }
+  .merge-toolbar p { margin-left: 0; }
+  .merge-preview-shell { min-height: 340px; height: min(55vh, 560px); }
+  .merge-footer { align-items: flex-start; flex-direction: column; }
+  .merge-footer-actions { width: 100%; }
+  .merge-secondary, .merge-primary { flex: 1; justify-content: center; padding-inline: 9px; }
+}
+
+@media (max-width: 560px) {
+  .site-header, main { width: calc(100% - 22px); }
+  .brand { font-size: 15px; }
+  .brand-mark { width: 30px; height: 30px; }
+  .local-badge { padding: 8px 10px; font-size: 10px; }
+  main { padding-bottom: 145px; }
+  .hero { padding: 42px 5px 38px; }
+  .eyebrow { font-size: 9px; }
+  .hero h1 { font-size: clamp(54px, 18.5vw, 82px); }
+  .hero h1 em::after { bottom: 0; height: 12px; }
+  .hero-copy { margin-top: 24px; font-size: 13px; }
+  .hero-stats { gap: 7px; }
+  .hero-stats span { padding: 7px 8px; font-size: 9px; }
+  .workspace { margin-inline: -2px; }
+  .control-panel { padding: 25px 20px 27px; }
+  .mode-switch { gap: 7px; }
+  .mode-button { min-height: 80px; padding: 12px 10px; gap: 9px; }
+  .mode-button svg { width: 32px; height: 32px; }
+  .mode-button b { font-size: 12px; }
+  .mode-button small { font-size: 9px; }
+  .add-actions { gap: 6px; }
+  .text-button { min-height: 44px; padding: 0 5px; gap: 4px; font-size: 9px; }
+  .text-button svg { width: 14px; height: 14px; }
+  .queue-panel { min-height: 470px; padding: 26px 18px; }
+  .queue-head { padding-bottom: 19px; }
+  .queue-head h2 { font-size: 20px; }
+  .queue-head-actions { align-items: flex-end; flex-direction: column; gap: 3px; }
+  .merge-button, .clear-button { min-height: 34px; }
+  .empty-state { min-height: 380px; }
+  .queue-item {
+    padding: 15px 0;
+    grid-template-columns: 52px minmax(0, 1fr) 104px;
+    grid-template-areas:
+      "thumb info actions"
+      "thumb status actions";
+    gap: 5px 11px;
+  }
+  .thumb-wrap { grid-area: thumb; width: 52px; height: 52px; }
+  .item-info { grid-area: info; }
+  .item-status { grid-area: status; display: flex; align-items: center; gap: 7px; }
+  .item-actions { grid-area: actions; }
+  .item-progress { margin-top: 7px; }
+  .summary-card { grid-template-columns: 38px 1fr auto; padding-inline: 12px; }
+  .summary-progress { width: 38px; height: 38px; }
+  .action-dock {
+    width: calc(100% - 18px);
+    min-height: 68px;
+    bottom: max(9px, env(safe-area-inset-bottom));
+    padding: 8px 8px 8px 13px;
+    border-radius: 18px;
+  }
+  .dock-copy span { max-width: 96px; }
+  .primary-button, .download-button { min-height: 50px; padding: 0 13px; }
+  .primary-button svg, .download-button svg { display: none; }
+  .preview-modal { padding: 8px; }
+  .merge-modal { padding: 8px; }
+  .merge-dialog { max-height: calc(100dvh - 16px); border-radius: 19px; }
+  .merge-header { min-height: 68px; padding: 11px 12px 10px 16px; }
+  .merge-header h2 { font-size: 17px; }
+  .merge-toolbar { padding: 9px 10px; }
+  .merge-direction { width: 100%; }
+  .merge-direction-button { flex: 1; justify-content: center; padding-inline: 6px; }
+  .merge-preview-shell { min-height: 360px; height: min(52vh, 500px); padding: 10px; }
+  .merge-footer { padding: 10px 11px 11px; }
+  .merge-footer-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .merge-primary { grid-column: 1 / -1; }
+  .preview-dialog { max-height: calc(100dvh - 16px); border-radius: 19px; }
+  .preview-header { min-height: 112px; padding: 12px 13px 11px 17px; flex-wrap: wrap; gap: 9px; }
+  .preview-header > div:first-child { margin-right: auto; }
+  .preview-header h2 { font-size: 17px; }
+  .preview-close { width: 42px; height: 42px; }
+  .preview-tabs { order: 3; width: 100%; margin-left: 0; }
+  .preview-tab { flex: 1; min-width: 0; min-height: 38px; }
+  .preview-grid { padding: 10px; }
+  .preview-pane figcaption { min-height: 43px; padding: 8px 11px; }
+  .preview-stage { height: min(60vh, 520px); min-height: 360px; padding: 10px; }
+  .preview-footer { min-height: 68px; padding: 10px 11px 10px 15px; gap: 10px; }
+  .preview-footer strong { max-width: 150px; }
+  .preview-download { min-height: 45px; padding: 0 13px; }
+  .preview-download svg { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+}
